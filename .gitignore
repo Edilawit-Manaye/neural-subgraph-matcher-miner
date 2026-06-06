@@ -1,4 +1,5 @@
 __pycache__/
+.python-version
 env/
 .env
 log/
@@ -9,6 +10,9 @@ plots/
 data/
 runs/
 results/
+logs/
+artifacts/hf_cache/
+artifacts/label_encoder_cache*/
 *.sw?
 orca/
 core
@@ -20,3 +24,8 @@ deepsnap-experimental/
 # tuning_runs/
 # for now just ignore all tuning trial checkpoints to avoid much space issue over git
 tuning_runs/*/trial-*/
+*.md
+\scripts
+!scripts/
+!scripts/*.py
+scripts/convert_hetionet_json_to_pkl.py
