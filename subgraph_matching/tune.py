@@ -56,12 +56,6 @@ def _add_tuning_args(parser: argparse.ArgumentParser) -> None:
         default=5,
         help="Number of tuning trials (Bayesian: default 25; Grid: default exhaustive)",
         )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Optional random seed (best-effort)",
-        )
 
 def _parse_args(argv=None):
     method = _peek_tuning_method(argv)
@@ -98,7 +92,7 @@ def main(argv=None) -> None:
             n_trials=args.tuning_n_trials,
             metric=args.tuning_metric,
             output_dir=args.tuning_output_dir,
-            seed=args.seed )
+            seed=getattr(args, "seed", None) )
         
         tuner = OptunaBayesianTuner(base_args=args, config=cfg)
         study = tuner.run()
@@ -114,7 +108,7 @@ def main(argv=None) -> None:
             metric=args.tuning_metric,
             output_dir=args.tuning_output_dir,
             n_trials=args.tuning_n_trials,
-            seed=args.seed )
+            seed=getattr(args, "seed", None) )
         
         tuner = GridTuner(base_args=args, config=cfg, train_fn=train_loop)
         result = tuner.run()
