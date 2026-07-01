@@ -159,6 +159,10 @@ pip install --upgrade pip
 # Install base requirements
 pip install -r requirements.txt
 ```
+**Additionally**: For Bayesian hyperparameter tuning, install `optuna` separately:
+```bash
+pip install optuna #the normal training and grid search do not require it.
+```
 
 ### Step 4: Install PyTorch and PyTorch Geometric
 

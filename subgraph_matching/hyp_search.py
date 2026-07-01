@@ -57,6 +57,52 @@ def parse_encoder(parser):
     parser.add_argument('--n_workers', type=int)
     parser.add_argument('--tag', type=str,
         help='tag to identify the run')
+    parser.add_argument('--graph_pkl_path', type=str, default=None,
+                        help="Path to the .pkl file containing the graph to be used for training")
+    parser.add_argument('--semantic_preset', type=str, default='biology',
+                        help='Semantic synthetic preset: biology, ecommerce, or social')
+    parser.add_argument('--semantic_mix_presets', type=str, default='biology,ecommerce,social',
+                        help='Comma-separated presets for mixed training')
+    parser.add_argument('--semantic_mix_weights', type=str, default='0.34,0.33,0.33',
+                        help='Comma-separated weights for semantic_mix_presets')
+    parser.add_argument('--val_semantic_preset', type=str, default='',
+                        help='Optional heldout semantic preset for validation/test generation')
+    parser.add_argument('--label_neg_ratio', type=float, default=0.5,
+                        help='Fraction of negatives that are label-corruption negatives')
+    parser.add_argument('--hard_negative_ratio', type=float, default=0.5,
+                        help='Fraction of structural negatives sampled as harder near-miss negatives')
+    parser.add_argument('--label_noise', type=float, default=0.05,
+                        help='Label corruption rate during semantic synthetic generation')
+    parser.add_argument('--use_label_features', action="store_true", default=False,
+                        help='Augment node features with label_id buckets')
+    parser.add_argument('--label_feature_dim', type=int, default=16,
+                        help='One-hot dimension for label_id feature buckets')
+    parser.add_argument('--semantic_mode', type=str, default='categorical',
+                        help='Semantic feature mode: categorical or hybrid_text')
+    parser.add_argument('--label_encoder_backend', type=str, default='auto',
+                        help='Frozen label encoder backend: auto, sentence_transformers, cache_only, or hashing')
+    parser.add_argument('--label_encoder_name', type=str, default='sentence-transformers/all-MiniLM-L6-v2',
+                        help='Frozen text encoder model name when using hybrid_text mode')
+    parser.add_argument('--label_encoder_cache_dir', type=str, default='artifacts/label_encoder_cache',
+                        help='optional cache directory for frozen label embeddings')
+    parser.add_argument('--text_encoder_dim', type=int, default=384,
+                        help='Raw frozen label embedding dimension before projection')
+    parser.add_argument('--text_label_dim', type=int, default=64,
+                        help='Projected text-label feature dimension added to node features')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Global random seed')
+    parser.add_argument('--order_threshold_mode', type=str, default='clf',
+                        help='Prediction mode for order model: clf or margin')
+    parser.add_argument('--order_margin_factor', type=float, default=0.5,
+                        help='When threshold_mode=margin, classify as positive if score <= margin*factor')
+    parser.add_argument('--encoder_type', type=str, default='baseline',
+                        help='Graph encoder: baseline or rgcn_basis')
+    parser.add_argument('--num_relations', type=int, default=64,
+                        help='Maximum number of supported edge relation ids (including UNK/overflow)')
+    parser.add_argument('--num_bases', type=int, default=8,
+                        help='Number of basis matrices for rgcn_basis encoder')
+    parser.add_argument('--rel_reg_lambda', type=float, default=1e-4,
+                        help='Regularization strength for relation coefficients in rgcn_basis encoder')
 
     parser.set_defaults(conv_type='SAGE',
                         method_type='order',

@@ -1,10 +1,4 @@
-"""Train the order embedding model"""
-
-# Set this flag to True to use hyperparameter optimization
-# We use Testtube for hyperparameter tuning
-HYPERPARAM_SEARCH = False
-HYPERPARAM_SEARCH_N_TRIALS = None   # how many grid search trials to run
-                                    #    (set to None for exhaustive search)
+# Train the order embedding model.
 
 import argparse
 from itertools import permutations
@@ -34,11 +28,7 @@ from common import data
 from common import feature_preprocess
 from common import models
 from common import utils
-if HYPERPARAM_SEARCH:
-    from test_tube import HyperOptArgumentParser
-    from subgraph_matching.hyp_search import parse_encoder
-else:
-    from subgraph_matching.config import parse_encoder
+from subgraph_matching.config import parse_encoder
 from subgraph_matching.test import validation
 
 def _configure_runtime_features(args):
@@ -127,6 +117,8 @@ def train(args, model,in_queue, out_queue):
     out_queue: output queue to an intersection computation worker
     """
     _configure_runtime_features(args)
+    device = utils.get_device()
+    model.to(device)
     scheduler, opt = utils.build_optimizer(args, model.parameters())
     if args.method_type == "order":
         clf_opt = optim.Adam(model.clf_model.parameters(), lr=args.lr)
@@ -196,6 +188,7 @@ def train_loop(args):
     logger = SummaryWriter(comment=args_str)
 
     model = build_model(args)
+    model = model.cpu()
     model.share_memory()
 
     if args.method_type == "order":
@@ -230,6 +223,8 @@ def train_loop(args):
         worker.start()
         workers.append(worker)
 
+    model.to(utils.get_device())
+
     if args.test:
         validation(args, model, test_pts, logger, 0, 0, verbose=True)
     else:
@@ -254,10 +249,8 @@ def train_loop(args):
 
 def main(force_test=False):
     mp.set_start_method("spawn", force=True)
-    parser = (argparse.ArgumentParser(description='Order embedding arguments')
-        if not HYPERPARAM_SEARCH else
-        HyperOptArgumentParser(strategy='grid_search'))
 
+    parser = argparse.ArgumentParser(description='Order embedding arguments')
     utils.parse_optimizer(parser)
     parse_encoder(parser)
     args = parser.parse_args()
@@ -273,16 +266,7 @@ def main(force_test=False):
     if force_test:
         args.test = True
 
-    # Currently due to parallelism in multi-gpu training, this code performs
-    # sequential hyperparameter tuning.
-    # All gpus are used for every run of training in hyperparameter search.
-    if HYPERPARAM_SEARCH:
-        for i, hparam_trial in enumerate(args.trials(HYPERPARAM_SEARCH_N_TRIALS)):
-            print("Running hyperparameter search trial", i)
-            print(hparam_trial)
-            train_loop(hparam_trial)
-    else:
-        train_loop(args)
+    train_loop(args)
 
 if __name__ == '__main__':
     main()
