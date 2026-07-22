@@ -49,14 +49,6 @@ jobs:
           chmod -R 777 ${{ github.workspace }}/results
           chmod -R 777 ${{ github.workspace }}/artifacts
 
-      - name: Convert SNAP email-Eu-core to PKL
-        run: |
-          test -f ${{ github.workspace }}/email-Eu-core.txt.gz
-          python scripts/convert_email_dataset.py \
-            --input email-Eu-core.txt.gz \
-            --output email_eu_core.pkl
-          test -f ${{ github.workspace }}/email_eu_core.pkl
-
       - name: Verify checkpoint files
         run: |
           test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt
@@ -74,6 +66,13 @@ jobs:
             decoder-image:latest \
             bash -c '
               set -uo pipefail
+
+              echo Converting email-Eu-core to email_eu_core.pkl...
+              python scripts/convert_email_dataset.py \
+                --input email-Eu-core.txt.gz \
+                --output email_eu_core.pkl
+
+              test -f /app/email_eu_core.pkl
 
               echo Preparing MiniLM semantic label cache for email_eu_core.pkl...
               python scripts/precompute_label_cache.py \
