@@ -38,6 +38,7 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
       - name: Create output directories
         run: |
           mkdir -p ${{ github.workspace }}/plots/cluster
@@ -47,26 +48,21 @@ jobs:
           chmod -R 777 ${{ github.workspace }}/plots
           chmod -R 777 ${{ github.workspace }}/results
           chmod -R 777 ${{ github.workspace }}/artifacts
-      - name: Verify workflow inputs
+
+      - name: Convert SNAP email-Eu-core to PKL
         run: |
-          test -f ${{ github.workspace }}/metta.pkl
-      - name: Verify semantic checkpoint files
+          test -f ${{ github.workspace }}/email-Eu-core.txt.gz
+          python scripts/convert_email_dataset.py \
+            --input email-Eu-core.txt.gz \
+            --output email_eu_core.pkl
+          test -f ${{ github.workspace }}/email_eu_core.pkl
+
+      - name: Verify checkpoint files
         run: |
           test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt
           test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt.meta.json
-      - name: Check available processors and usage percentage
-        id: cpu-check
-        run: |
-          TOTAL_CPUS=$(nproc)
-          USED_CPUS=4
-          PERCENT_USED=$(( 100 * USED_CPUS / TOTAL_CPUS ))
-          echo "Total available processors: $TOTAL_CPUS"
-          echo "Processors used for decoder: $USED_CPUS"
-          echo "Percent of processors used: ${PERCENT_USED}%"
-          echo "total_cpus=$TOTAL_CPUS" >> $GITHUB_OUTPUT
-          echo "percent_used=$PERCENT_USED" >> $GITHUB_OUTPUT
 
-      - name: Run semantic decoder in Docker container
+      - name: Run decoder benchmarks
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
@@ -76,98 +72,76 @@ jobs:
             -e HF_HOME=/app/artifacts/hf_cache \
             -e SENTENCE_TRANSFORMERS_HOME=/app/artifacts/hf_cache/sentence_transformers \
             decoder-image:latest \
-            bash -c "
-              set -euo pipefail
-              echo 'Preparing MiniLM semantic label cache for metta.pkl...'
+            bash -c '
+              set -uo pipefail
+
+              echo Preparing MiniLM semantic label cache for email_eu_core.pkl...
               python scripts/precompute_label_cache.py \
-                --graph_pkl metta.pkl \
+                --graph_pkl email_eu_core.pkl \
                 --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
                 --backend sentence_transformers \
                 --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
                 --batch_size 128
 
-              echo 'Verifying cache-only semantic path...'
+              echo Verifying cache-only semantic path...
               python scripts/precompute_label_cache.py \
-                --graph_pkl metta.pkl \
+                --graph_pkl email_eu_core.pkl \
                 --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
                 --backend cache_only \
                 --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
                 --batch_size 128
 
-              echo 'Starting semantic decoder run on metta.pkl...'
-              python -m subgraph_mining.decoder \
-                --dataset=metta.pkl \
-                --graph_type=directed \
-                --model_path=/app/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt \
-                --vocab_dir=/app/artifacts/vocab_ci_semantic \
-                --n_trials=20 \
-                --n_neighborhoods=25 \
-                --min_pattern_size=3 \
-                --max_pattern_size=4 \
-                --min_neighborhood_size=3 \
-                --max_neighborhood_size=6 \
-                --search_strategy=greedy \
-                --memory_efficient \
-                --out_batch_size=2 \
-                --streaming_workers=0 \
-                --out_path=/app/results/semantic_patterns.pkl \
-                2>&1 | tee /app/semantic_decoder.log
+              STRS=(greedy mcts beam)
 
-              echo 'Checking output directories...'
-              test -f /app/results/semantic_patterns.pkl
-              test -f /app/results/semantic_patterns.json
-              ls -la /app/plots/cluster
+              declare -A CONFIGS
+              CONFIGS=(
+                [small]="n_trials=100 n_neighborhoods=200 min_neighborhood_size=3 max_neighborhood_size=6 radius=3"
+                [medium]="n_trials=300 n_neighborhoods=800 min_neighborhood_size=4 max_neighborhood_size=12 radius=4"
+                [large]="n_trials=800 n_neighborhoods=1500 min_neighborhood_size=5 max_neighborhood_size=20 radius=5"
+              )
+
+              for strat in "${STRS[@]}"; do
+                for cfg in small medium large; do
+                  eval "${CONFIGS[$cfg]}"
+
+                  OUT_PATH=/app/results/patterns_${strat}_${cfg}.pkl
+                  LOG_PATH=/app/results/decoder_${strat}_${cfg}.log
+
+                  echo "Running strategy=${strat} config=${cfg}..."
+                  python -m subgraph_mining.decoder \
+                    --dataset=email_eu_core.pkl \
+                    --graph_type=directed \
+                    --model_path=/app/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt \
+                    --vocab_dir=/app/artifacts/vocab_ci_semantic \
+                    --n_trials=${n_trials} \
+                    --n_neighborhoods=${n_neighborhoods} \
+                    --min_pattern_size=3 \
+                    --max_pattern_size=4 \
+                    --min_neighborhood_size=${min_neighborhood_size} \
+                    --max_neighborhood_size=${max_neighborhood_size} \
+                    --search_strategy=${strat} \
+                    --memory_efficient \
+                    --out_batch_size=2 \
+                    --streaming_workers=0 \
+                    --radius=${radius} \
+                    --out_path=${OUT_PATH} \
+                    > >(tee ${LOG_PATH}) 2>&1 || true
+
+                  python scripts/collect_metrics.py \
+                    "${LOG_PATH}" "${OUT_PATH}" "${strat}" "${cfg}" \
+                    "${n_trials}" "${n_neighborhoods}" \
+                    "${min_neighborhood_size}" "${max_neighborhood_size}" \
+                    "${radius}" /app/results/benchmark_results.csv || true
+                done
+              done
+
+              echo Generating plots...
+              python scripts/generate_plots.py || true
+
+              echo Checking outputs...
               ls -la /app/results
-              "
-      # - name: Run pattern counter in Docker container
-      #   run: |
-      #     docker run --rm \
-      #       -v ${{ github.workspace }}:/app \
-      #       -e PYTHONUNBUFFERED=1 \
-      #       decoder-image:latest \
-      #       bash -c "
-      #         set -e
-      #         export PYTHONPATH=/app
-      #         echo 'Running pattern counter...'
-      #         python -m analyze.count_patterns \
-      #           --dataset=metta.pkl \
-      #           --queries_path=results/patterns.pkl \
-      #           --out_path=results/ \
-      #           --node_anchored \
-
-      #         echo 'Counting completed.'
-      #         ls -la /app/results
-      #       "
-      # - name: Run matcher in Docker container
-      #  run: |
-      #   docker run --rm \
-      #    -v ${{ github.workspace }}:/app \
-      #   -e PYTHONUNBUFFERED=1 \
-      #  decoder-image:latest \
-      # bash -c "
-      #  set -e
-      # echo 'Starting matcher run on custom gene graph...'
-      #ython -m subgraph_matching.train \
-      # --dataset=graph \
-      #--graph_pkl_path=graph.pkl \
-      #--node_anchored \
-      #--batch_size 16 \
-      #--val_size 128
-      #echo 'Checking output directories...'
-      #ls -la /app/results
-      # ls -la /app/plots
-      #"
-      #         echo 'Starting matcher run on custom gene graph...'
-      #         python -m subgraph_matching.train \
-      #           --dataset=graph \
-      #           --graph_pkl_path=graph.pkl \
-      #           --node_anchored \
-      #           --batch_size 16 \
-      #           --val_size 128
-      #         echo 'Checking output directories...'
-      #         ls -la /app/results
-      #         ls -la /app/plots
-      #       "
+              ls -la /app/plots/cluster
+            '
 
       - name: Check for generated files
         run: |
@@ -175,7 +149,8 @@ jobs:
           ls -R plots/ || echo "No plots directory found"
           echo "Checking results directory:"
           ls -R results/ || echo "No results directory found"
-      - name: Upload plots as artifact
+
+      - name: Upload plots and results
         if: always()
         uses: actions/upload-artifact@v4
         with:
