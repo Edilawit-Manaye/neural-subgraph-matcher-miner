@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      strategy:
+        description: 'Search strategy to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - greedy
+          - mcts
+          - beam
 
 jobs:
   run-decoder:
@@ -67,6 +78,13 @@ jobs:
             bash -c '
               set -uo pipefail
 
+              STRATEGY_INPUT="${{ github.event.inputs.strategy || 'all' }}"
+              if [ "$STRATEGY_INPUT" = "all" ]; then
+                STRS=(greedy mcts beam)
+              else
+                STRS=("$STRATEGY_INPUT")
+              fi
+
               echo Converting email-Eu-core to email_eu_core.pkl...
               python scripts/convert_email_dataset.py \
                 --input email-Eu-core.txt.gz \
@@ -89,8 +107,6 @@ jobs:
                 --backend cache_only \
                 --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
                 --batch_size 128
-
-              STRS=(greedy mcts beam)
 
               declare -A CONFIGS
               CONFIGS=(
